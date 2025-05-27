@@ -19,16 +19,16 @@ enum class Tetromino(val shape: List<List<Pair<Int, Int>>>) {
         listOf(-1 to 0, 0 to 0, 1 to 0, 0 to 1)
     )),
     S(listOf(
-        listOf(0 to 0, 0 to 1, 1 to -1, 1 to 0),
-        listOf(-1 to 0, 0 to 0, 0 to 1, 1 to 1),
-        listOf(0 to 0, 0 to 1, 1 to -1, 1 to 0),
-        listOf(-1 to 0, 0 to 0, 0 to 1, 1 to 1)
+        listOf(0 to -1, 0 to 0, 1 to 0, 1 to 1), // default
+        listOf(-1 to 0, 0 to 0, 0 to 1, 1 to 1), // CW
+        listOf(0 to -1, 0 to 0, 1 to 0, 1 to 1), // 180
+        listOf(-1 to 0, 0 to 0, 0 to 1, 1 to 1)  // CCW
     )),
     Z(listOf(
-        listOf(0 to -1, 0 to 0, 1 to 0, 1 to 1),
-        listOf(-1 to 1, 0 to 0, 0 to 1, 1 to 0),
-        listOf(0 to -1, 0 to 0, 1 to 0, 1 to 1),
-        listOf(-1 to 1, 0 to 0, 0 to 1, 1 to 0)
+        listOf(0 to 0, 0 to 1, 1 to -1, 1 to 0),  // default
+        listOf(-1 to 1, 0 to 0, 0 to 1, 1 to 0),  // CW
+        listOf(0 to 0, 0 to 1, 1 to -1, 1 to 0),  // 180
+        listOf(-1 to 1, 0 to 0, 0 to 1, 1 to 0)   // CCW
     )),
     J(listOf(
         listOf(0 to -1, 0 to 0, 0 to 1, 1 to -1),
@@ -44,7 +44,8 @@ enum class Tetromino(val shape: List<List<Pair<Int, Int>>>) {
     ));
 
     fun cellsAt(rotation: Int, origin: Pair<Int, Int>): List<Pair<Int, Int>> {
-        return shape[rotation % 4].map { (dy, dx) ->
+        val flippedRotation = (rotation + 2) % 4
+        return shape[flippedRotation].map { (dy, dx) ->
             origin.first + dy to origin.second + dx
         }
     }

@@ -8,8 +8,8 @@ private val pieceColorMap = mapOf(
     Tetromino.S to Scalar(28.0, 219.7, 86.2),
     Tetromino.Z to Scalar(29.8, 135.8, 168.8),
     Tetromino.T to Scalar(155.4, 110.0, 151.9),
-    Tetromino.L to Scalar(34.7, 184.0, 164.4),
-    Tetromino.J to Scalar(159.2, 141.1, 46.1),
+    Tetromino.J to Scalar(34.7, 184.0, 164.4),
+    Tetromino.L to Scalar(159.2, 141.1, 46.1),
     Tetromino.I to Scalar(153.8, 208.7, 22.9)
 )
 

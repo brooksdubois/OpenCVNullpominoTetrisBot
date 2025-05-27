@@ -8,7 +8,7 @@ class MoveMapper(private val spawnColumn: Int = 4) {
 
     fun generateInputSequence(rotation: Int, column: Int): List<Int> {
         val sequence = buildList {
-            repeat(rotation) { add(KeyEvent.VK_C) } // Rotate CW
+            repeat(rotation) { add(KeyEvent.VK_SHIFT) }
             val delta = column - spawnColumn
             val directionKey = if (delta < 0) KeyEvent.VK_LEFT else KeyEvent.VK_RIGHT
             repeat(abs(delta)) { add(directionKey) }
@@ -17,7 +17,7 @@ class MoveMapper(private val spawnColumn: Int = 4) {
         return sequence
     }
 
-    fun execute(robot: Robot, inputs: List<Int>, delayMs: Long = 10L) {
+    fun execute(robot: Robot, inputs: List<Int>, delayMs: Long = 30L) {
         for (key in inputs) {
             robot.keyPress(key)
             robot.keyRelease(key)

@@ -1,8 +1,10 @@
 package engine
 
+import opencv.toHSV
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class TetrisBoard(val width: Int = 10, val height: Int = 20) {
     private val grid = Array(height) { BooleanArray(width) }
@@ -25,7 +27,7 @@ class TetrisBoard(val width: Int = 10, val height: Int = 20) {
     fun dropPiece(tetromino: Tetromino, rotation: Int, column: Int): Boolean {
         for (row in height downTo 0) {
             val origin = row to column
-            if (canPlace(tetromino, rotation, origin)) {
+            if (canPlace(tetromino, rotation, origin) && hasVerticalAccess(tetromino, rotation, origin)) {
                 place(tetromino, rotation, origin)
                 clearFullLines()
                 return true
@@ -38,15 +40,10 @@ class TetrisBoard(val width: Int = 10, val height: Int = 20) {
         val newGrid = mutableListOf<BooleanArray>()
         var cleared = 0
         for (row in grid) {
-            if (row.all { it }) {
-                cleared++
-            } else {
-                newGrid.add(row)
-            }
+            if (row.all { it }) cleared++
+            else newGrid.add(row)
         }
-        repeat(cleared) {
-            newGrid.add(BooleanArray(width))
-        }
+        repeat(cleared) { newGrid.add(BooleanArray(width)) }
         for (i in 0 until height) {
             grid[i] = newGrid[height - 1 - i]
         }
@@ -57,23 +54,29 @@ class TetrisBoard(val width: Int = 10, val height: Int = 20) {
 
     private fun evaluateBoard(tempGrid: Array<BooleanArray>): Int {
         var holes = 0
+        var existingHoleFills = 0
         var aggregateHeight = 0
         var linesCleared = 0
         val columnHeights = IntArray(width)
 
         for (col in 0 until width) {
-            var found = false
+            var foundBlock = false
             for (row in 0 until height) {
                 if (tempGrid[row][col]) {
-                    if (!found) {
+                    if (!foundBlock) {
                         columnHeights[col] = height - row
                         aggregateHeight += height - row
-                        found = true
+                        foundBlock = true
                     }
-                } else if (found) {
+                } else if (foundBlock) {
                     holes++
+                    if (grid[row][col]) existingHoleFills++ // filled a previous hole
                 }
             }
+        }
+
+        for (row in 0 until height) {
+            if (tempGrid[row].all { it }) linesCleared++
         }
 
         var bumpiness = 0
@@ -81,53 +84,117 @@ class TetrisBoard(val width: Int = 10, val height: Int = 20) {
             bumpiness += abs(columnHeights[i] - columnHeights[i + 1])
         }
 
-        for (row in 0 until height) {
-            if (tempGrid[row].all { it }) linesCleared++
-        }
-
-        return holes * 100 + aggregateHeight * 1 + bumpiness * 2 - linesCleared * 3000
-    }
-
-    fun autoSelect(tetromino: Tetromino): Pair<Int, Int>? {
-        var bestScore = Int.MAX_VALUE
-        var bestPlacement: Pair<Int, Int>? = null
-
-        for (rotation in 0 until 4) {
-            for (col in 0 until width) {
-                for (row in height downTo 0) {
-                    val origin = row to col
-                    if (canPlace(tetromino, rotation, origin)) {
-                        val tempGrid = cloneGrid()
-                        tetromino.cellsAt(rotation, origin).forEach { (r, c) ->
-                            if (r in 0 until height && c in 0 until width) {
-                                tempGrid[r][c] = true
-                            }
-                        }
-                        val score = evaluateBoard(tempGrid)
-                        if (score < bestScore || (score == bestScore && col > (bestPlacement?.second ?: -1))) {
-                            bestScore = score
-                            bestPlacement = rotation to col
-                        }
-                        break
-                    }
-                }
-            }
-        }
-
-        return bestPlacement
+        return linesCleared * 1500 +  // high reward for clearing
+                existingHoleFills * 200 -  // reward filling prior holes
+                holes * 150 -              // penalize new holes
+                bumpiness * 5 -
+                aggregateHeight
     }
 
     fun updateFromGameFrame(mat: Mat, origin: Point, cellSize: Size) {
         for (row in 0 until height) {
             for (col in 0 until width) {
-                val x = (origin.x + col * cellSize.width).toInt()
-                val y = (origin.y + row * cellSize.height).toInt()
-                val region = mat.submat(Rect(x, y, cellSize.width.toInt(), cellSize.height.toInt()))
-                val avg = Core.mean(region)
-                val luma = 0.299 * avg.`val`[2] + 0.587 * avg.`val`[1] + 0.114 * avg.`val`[0]
-                grid[row][col] = luma > 60 // 🔧 tweak this threshold if needed
+                val cellX = origin.x + col * cellSize.width
+                val cellY = origin.y + row * cellSize.height
+
+                // Define 4×4 subregion near the center
+                val regionSize = 4
+                val centerX = cellX + cellSize.width / 2
+                val centerY = cellY + cellSize.height / 2
+                val half = regionSize / 2
+
+                val regionX = (centerX - half).roundToInt().coerceIn(0, mat.cols() - regionSize)
+                val regionY = (centerY - half).roundToInt().coerceIn(0, mat.rows() - regionSize)
+
+                val region = mat.submat(Rect(regionX, regionY, regionSize, regionSize))
+                val avgBGRScalar = Core.mean(region)
+                val avgBGR = doubleArrayOf(
+                    avgBGRScalar.`val`[0],
+                    avgBGRScalar.`val`[1],
+                    avgBGRScalar.`val`[2]
+                )
+
+                val (h, s, v) = avgBGR.toHSV()
+                val isReal = v > 180
+                grid[row][col] = isReal
+
+                // Visual debug overlay (preserve full precision)
+                val overlayColor = when {
+                    v > 180 -> Scalar(0.0, 255.0, 0.0)     // Green = real
+                    v > 100 -> Scalar(0.0, 255.0, 255.0)    // Yellow = ghost
+                    else -> Scalar(0.0, 0.0, 0.0)           // Black = empty
+                }
+
+                val drawX = cellX.roundToInt()
+                val drawY = cellY.roundToInt()
+
+                Imgproc.rectangle(
+                    mat,
+                    Point(drawX.toDouble(), drawY.toDouble()),
+                    Point((drawX + cellSize.width).toInt().toDouble(), (drawY + cellSize.height).toInt().toDouble()),
+                    overlayColor,
+                    -1
+                )
+
+                Imgproc.putText(
+                    mat,
+                    "%.0f".format(v),
+                    Point(drawX + 2.0, drawY + cellSize.height - 2.0),
+                    Imgproc.FONT_HERSHEY_SIMPLEX,
+                    0.3,
+                    Scalar(255.0, 255.0, 255.0),
+                    1
+                )
             }
         }
+    }
+
+    fun clone(): TetrisBoard {
+        val cloned = TetrisBoard(width, height)
+        for (row in 0 until height) {
+            cloned.grid[row] = grid[row].clone()
+        }
+        return cloned
+    }
+
+    fun monteCarloSelect(current: Tetromino, generatePiece: () -> Tetromino, rollouts: Int = 50, depth: Int = 4): Pair<Int, Int> {
+        var bestScore = Int.MIN_VALUE
+        var bestMove: Pair<Int, Int> = 0 to 0
+
+        for (rotation in 0 until 4) {
+            for (col in 0 until width) {
+                var finalRow = -1
+                for (row in height downTo 0) {
+                    if (canPlace(current, rotation, row to col)) {
+                        finalRow = row
+                        break
+                    }
+                }
+
+                if (finalRow == -1) continue
+                place(current, rotation, finalRow to col)
+                clearFullLines()
+
+                var totalScore = 0
+                repeat(rollouts) {
+                    val simBoard = clone()
+                    repeat(depth) {
+                        val next = generatePiece()
+                        val move = simBoard.autoSelect(current, next)
+                        simBoard.dropPiece(next, move.first, move.second)
+                    }
+                    totalScore += evaluateBoard(cloneGrid())
+                }
+
+                val avg = totalScore / rollouts
+                if (avg > bestScore) {
+                    bestScore = avg
+                    bestMove = rotation to col
+                }
+            }
+        }
+
+        return bestMove
     }
 
     fun drawOverlay(mat: Mat, origin: Point, cellSize: Size) {
@@ -140,43 +207,109 @@ class TetrisBoard(val width: Int = 10, val height: Int = 20) {
         Imgproc.rectangle(mat, boardRect, Scalar(0.0, 0.0, 255.0), 2)
     }
 
-    fun printBoard() {
-        for (row in grid.reversed()) {
-            println(row.joinToString("", prefix = "|", postfix = "|") { if (it) "#" else " " })
-        }
-        println("+" + "-".repeat(width) + "+")
-    }
-
-    fun drawDebugOverlay(mat: Mat, origin: Point, cellSize: Size) {
-        for (row in 0 until height) {
+    fun simulateNextPiece(grid: Array<BooleanArray>, tetromino: Tetromino): Int {
+        var best = Int.MIN_VALUE
+        for (rotation in 0 until 4) {
             for (col in 0 until width) {
-                val x = (origin.x + col * cellSize.width).toInt()
-                val y = (origin.y + row * cellSize.height).toInt()
-                val region = mat.submat(Rect(x, y, cellSize.width.toInt(), cellSize.height.toInt()))
-                val avg = Core.mean(region)
-                val luma = 0.299 * avg.`val`[2] + 0.587 * avg.`val`[1] + 0.114 * avg.`val`[0]
-
-                // Colored overlay
-                val overlayColor = if (luma > 60) Scalar(0.0, 255.0, 0.0) else Scalar(0.0, 0.0, 0.0)
-                Imgproc.rectangle(
-                    mat,
-                    Point(x.toDouble(), y.toDouble()),
-                    Point(x + cellSize.width, y + cellSize.height),
-                    overlayColor,
-                    -1
-                )
-
-                // Luma label
-                Imgproc.putText(
-                    mat,
-                    "%.0f".format(luma),
-                    Point(x + 2.0, y + cellSize.height - 2.0),
-                    Imgproc.FONT_HERSHEY_SIMPLEX,
-                    0.3,
-                    Scalar(255.0, 255.0, 255.0),
-                    1
-                )
+                for (row in height downTo 0) {
+                    val origin = row to col
+                    if (!canPlace(tetromino, rotation, origin, grid)) continue
+                    val temp = grid.map { it.clone() }.toTypedArray()
+                    tetromino.cellsAt(rotation, origin).forEach { (r, c) ->
+                        if (r in 0 until height && c in 0 until width)
+                            temp[r][c] = true
+                    }
+                    val score = evaluateBoard(temp)
+                    if (score > best) best = score
+                }
             }
         }
+        return best
+    }
+
+    fun canPlace(tetromino: Tetromino, rotation: Int, origin: Pair<Int, Int>, grid: Array<BooleanArray>): Boolean {
+        return tetromino.cellsAt(rotation, origin).all { (r, c) ->
+            r in 0 until height && c in 0 until width && !grid[r][c]
+        }
+    }
+
+    fun autoSelect(tetromino: Tetromino, next: Tetromino?): Pair<Int, Int> {
+        var bestScore = Int.MIN_VALUE
+        var bestPlacement: Pair<Int, Int> = 0 to 0
+
+        for (rotation in 0 until 4) {
+            for (col in 0 until width) {
+                for (row in height downTo 0) {
+                    val origin = row to col
+                    if (!canPlace(tetromino, rotation, origin) || !hasVerticalAccess(tetromino, rotation, origin)) continue
+
+                    val tempGrid = cloneGrid()
+                    tetromino.cellsAt(rotation, origin).forEach { (r, c) ->
+                        if (r in 0 until height && c in 0 until width)
+                            tempGrid[r][c] = true
+                    }
+
+                    val baseScore = evaluateBoard(tempGrid)
+
+                    // 🔁 Lookahead: simulate next piece
+                    val lookaheadScore = next?.let {
+                        simulateNextPiece(tempGrid, it)
+                    } ?: 0
+
+                    val combinedScore = baseScore + lookaheadScore
+
+                    if (combinedScore > bestScore) {
+                        bestScore = combinedScore
+                        bestPlacement = rotation to col
+                    }
+                }
+            }
+        }
+
+        return bestPlacement
+    }
+
+
+    fun drawBotPrediction(
+        mat: Mat,
+        origin: Point,
+        cellSize: Size,
+        tetromino: Tetromino,
+        rotation: Int,
+        column: Int
+    ) {
+        for (row in height downTo 0) {
+            val originCell = row to column
+            if (canPlace(tetromino, rotation, originCell)) {
+                val blocks = tetromino.cellsAt(rotation, originCell)
+                for ((r, c) in blocks) {
+                    if (r in 0 until height && c in 0 until width) {
+                        val x = origin.x + c * cellSize.width
+                        val y = origin.y + r * cellSize.height
+                        Imgproc.rectangle(
+                            mat,
+                            Point(x, y),
+                            Point(x + cellSize.width, y + cellSize.height),
+                            Scalar(255.0, 0.0, 255.0), // pink outline
+                            2
+                        )
+                    }
+                }
+                break
+            }
+        }
+    }
+
+    private fun hasVerticalAccess(tetromino: Tetromino, rotation: Int, origin: Pair<Int, Int>): Boolean {
+        val cells = tetromino.cellsAt(rotation, origin)
+        val columns = cells.map { it.second }.distinct()
+
+        for (col in columns) {
+            val maxRow = cells.filter { it.second == col }.minOf { it.first }
+            for (row in 0 until maxRow) {
+                if (isCellOccupied(row, col)) return false
+            }
+        }
+        return true
     }
 }
