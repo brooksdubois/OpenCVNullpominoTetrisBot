@@ -8,4 +8,4 @@ This project is meant to use computer vision to play nullpomino for you. It is a
 
 This project will spin up a window that needs to be lined up with the green rectangle over the nullpomino 150 lines marathon next piece. For now, it only supports this game which should run in Swing and be fully playable. It reads the screen and detects the playfield, so pay attention to how the windows are aligned. To actually get it to play you'll need to start the opencv app and then quickly start a new game in tetris.
 
-If openCV is not working at all, you may need to compile the dylib file for your system. This involves checking out the OpenCV repo, running the make command, locating the .dylib, and copying it into the project. I'd reccomend using ChatGPT for help with this.
+If openCV is not working at all, you may need to compile the dylib file for your system. This involves checking out the OpenCV repo, running the make command, locating the .dylib, and copying it into the project.
