@@ -1,5 +1,3 @@
-package input
-
 import java.awt.Robot
 import java.awt.event.KeyEvent
 import kotlin.math.abs

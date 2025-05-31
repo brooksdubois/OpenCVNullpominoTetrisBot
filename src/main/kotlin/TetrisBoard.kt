@@ -1,6 +1,3 @@
-package engine
-
-import opencv.toHSV
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
 import kotlin.math.abs
@@ -90,6 +87,126 @@ class TetrisBoard(val width: Int = 10, val height: Int = 20) {
                 bumpiness * 5 -
                 aggregateHeight
     }
+
+    private fun hasVerticalAccessStatic(
+        grid: Array<BooleanArray>,
+        tetromino: Tetromino,
+        rotation: Int,
+        origin: Pair<Int, Int>
+    ): Boolean {
+        val cells = tetromino.cellsAt(rotation, origin)
+        val columns = cells.map { it.second }.distinct()
+
+        for (col in columns) {
+            val maxRow = cells.filter { it.second == col }.minOf { it.first }
+            for (row in 0 until maxRow) {
+                if (row in grid.indices && col in grid[0].indices && grid[row][col]) return false
+            }
+        }
+        return true
+    }
+
+    fun dropPieceOnGrid(
+        grid: Array<BooleanArray>,
+        tetromino: Tetromino,
+        rotation: Int,
+        column: Int
+    ): Array<BooleanArray>? {
+        for (row in height downTo 0) {
+            val origin = row to column
+            if (!Tetromino.canPlaceOnGrid(grid, tetromino, rotation, origin)) continue
+            if (!hasVerticalAccessStatic(grid, tetromino, rotation, origin)) continue
+
+            val clone = Array(height) { r -> grid[r].clone() }
+            tetromino.cellsAt(rotation, origin).forEach { (r, c) ->
+                if (r in 0 until height && c in 0 until width) {
+                    clone[r][c] = true
+                }
+            }
+            return clone
+        }
+        return null
+    }
+
+
+    private fun simulateLookahead(
+        grid: Array<BooleanArray>,
+        queue: List<Tetromino>,
+        depth: Int
+    ): Int {
+        if (depth == 0 || queue.isEmpty()) return evaluateBoard(grid)
+
+        var bestScore = Int.MAX_VALUE
+
+        for (rotation in 0 until 4) {
+            for (col in 0 until width) {
+                var placed = false
+
+                for (row in height downTo 0) {
+                    val origin = row to col
+
+                    if (!Tetromino.canPlaceOnGrid(grid, queue[0], rotation, origin)) continue
+                    if (!hasVerticalAccessStatic(grid, queue[0], rotation, origin)) continue
+
+                    // Found the drop location
+                    val nextGrid = Array(height) { r -> grid[r].clone() }
+                    queue[0].cellsAt(rotation, origin).forEach { (r, c) ->
+                        if (r in 0 until height && c in 0 until width) {
+                            nextGrid[r][c] = true
+                        }
+                    }
+
+                    val newGrid = dropPieceOnGrid(grid, queue[0], rotation, col) ?: continue
+                    val score = simulateLookahead(newGrid, queue.drop(1), depth - 1)
+                    if (score < bestScore) bestScore = score
+
+                    placed = true
+                    break // only evaluate the first reachable row (gravity drop)
+                }
+
+                if (placed) break
+            }
+        }
+        return bestScore
+    }
+
+    fun autoSelectWithLookahead(
+        queue: List<Tetromino>,
+        depth: Int = 2
+    ): Pair<Int, Int>? {
+        if (queue.isEmpty()) return null
+
+        var bestScore = Int.MAX_VALUE
+        var bestMove: Pair<Int, Int>? = null
+
+        for (rotation in 0 until 4) {
+            for (col in 0 until width) {
+                for (row in height downTo 0) {
+                    val origin = row to col
+                    if (!canPlace(queue[0], rotation, origin)) continue
+                    if (!hasVerticalAccess(queue[0], rotation, origin)) continue
+
+                    val tempGrid = cloneGrid()
+                    queue[0].cellsAt(rotation, origin).forEach { (r, c) ->
+                        if (r in 0 until height && c in 0 until width) {
+                            tempGrid[r][c] = true
+                        }
+                    }
+
+                    val score = simulateLookahead(tempGrid, queue.drop(1), depth - 1)
+                    if (score < bestScore || (score == bestScore && col > (bestMove?.second ?: -1))) {
+                        bestScore = score
+                        bestMove = rotation to col
+                    }
+
+                    break // only need the first valid row from top-down
+                }
+            }
+        }
+
+        return bestMove
+    }
+
 
     fun updateFromGameFrame(mat: Mat, origin: Point, cellSize: Size) {
         for (row in 0 until height) {

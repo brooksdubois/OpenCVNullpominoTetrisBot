@@ -1,4 +1,3 @@
-package engine
 enum class Tetromino(val shape: List<List<Pair<Int, Int>>>) {
     I(listOf(
         listOf(0 to -1, 0 to 0, 0 to 1, 0 to 2),
@@ -47,6 +46,19 @@ enum class Tetromino(val shape: List<List<Pair<Int, Int>>>) {
         val flippedRotation = (rotation + 2) % 4
         return shape[flippedRotation].map { (dy, dx) ->
             origin.first + dy to origin.second + dx
+        }
+    }
+    companion object {
+        fun canPlaceOnGrid(
+            grid: Array<BooleanArray>,
+            tetromino: Tetromino,
+            rotation: Int,
+            origin: Pair<Int, Int>
+        ): Boolean {
+            val (rows, cols) = grid.size to grid[0].size
+            return tetromino.cellsAt(rotation, origin).all { (r, c) ->
+                r in 0 until rows && c in 0 until cols && !grid[r][c]
+            }
         }
     }
 }

@@ -1,6 +1,6 @@
 package tetris.opencv
 
-import engine.Tetromino
+import Tetromino
 import org.opencv.core.Scalar
 
 private val pieceColorMap = mapOf(
