@@ -1,4 +1,5 @@
 import kotlin.math.abs
+
 const val MAX_ALLOWED_HEIGHT = 10
 
 object TetrisMoves {
@@ -11,7 +12,6 @@ object TetrisMoves {
         return 0
     }
 
-
     fun dropPieceOnGrid(
         grid: Array<BooleanArray>, brick: Brick, rotation: Int, column: Int
     ): Array<BooleanArray>? {
@@ -19,7 +19,7 @@ object TetrisMoves {
         val width = grid[0].size
         val dropRow = (height downTo 0).firstOrNull { row ->
             Brick.canPlaceOnGrid(grid, brick, rotation, row to column) &&
-            hasVerticalAccessStatic(grid, brick, rotation, row to column)
+                    hasVerticalAccessStatic(grid, brick, rotation, row to column)
         } ?: return null
 
         val newGrid = Array(height) { grid[it].clone() }
@@ -55,7 +55,7 @@ object TetrisMoves {
             (0 until width).mapNotNull { col ->
                 val dropRow = (height downTo 0).firstOrNull { row ->
                     Brick.canPlaceOnGrid(grid, queue[0], rotation, row to col) &&
-                    hasVerticalAccessStatic(grid, queue[0], rotation, row to col)
+                            hasVerticalAccessStatic(grid, queue[0], rotation, row to col)
                 } ?: return@mapNotNull null
                 val newGrid = dropPieceOnGrid(grid, queue[0], rotation, col) ?: return@mapNotNull null
                 simulateLookahead(newGrid, queue.drop(1), depth - 1, evaluate)
@@ -66,10 +66,11 @@ object TetrisMoves {
     fun autoSelectWithLookahead(
         board: TetrisBoard,
         queue: List<Brick>,
-        depth: Int = 3,
+        depth: Int = 1,
         evaluate: (Array<BooleanArray>) -> Int
     ): Pair<Int, Int>? {
         if (queue.isEmpty()) return null
+
         var bestScore = Int.MAX_VALUE
         var bestMove: Pair<Int, Int>? = null
         val grid = board.getGrid()
@@ -78,26 +79,28 @@ object TetrisMoves {
 
         for (rotation in 0 until 4) {
             for (col in 0 until width) {
-                for (row in height downTo 0) {
-                    val origin = row to col
-                    if (!Brick.canPlaceOnGrid(grid, queue[0], rotation, origin)) continue
-                    if (!board.hasVerticalAccess(queue[0], rotation, origin)) continue
+                val dropRow = (height downTo 0).firstOrNull { row ->
+                    Brick.canPlaceOnGrid(grid, queue[0], rotation, row to col) &&
+                            board.hasVerticalAccess(queue[0], rotation, row to col)
+                } ?: continue
 
-                    val tempGrid = board.cloneGrid()
-                    queue[0].rotations[rotation % 4].forEach { (dy, dx) ->
-                        val r = row + dy
-                        val c = col + dx
-                        if (r in 0 until height && c in 0 until width) tempGrid[r][c] = true
-                    }
-                    val score = simulateLookahead(tempGrid, queue.drop(1), depth - 1, evaluate)
-                    if (score < bestScore || (score == bestScore && col > (bestMove?.second ?: -1))) {
-                        bestScore = score
-                        bestMove = rotation to col
-                    }
-                    break
+                val tempGrid = board.cloneGrid()
+                queue[0].rotations[rotation % 4].forEach { (dy, dx) ->
+                    val r = dropRow + dy
+                    val c = col + dx
+                    if (r in 0 until height && c in 0 until width) tempGrid[r][c] = true
+                }
+
+                val score = simulateLookahead(tempGrid, queue.drop(1), depth - 1, evaluate)
+                println("Test: rot=$rotation col=$col score=$score")
+
+                if (score < bestScore) {
+                    bestScore = score
+                    bestMove = rotation to col
                 }
             }
         }
+
         return bestMove
     }
 
@@ -105,15 +108,18 @@ object TetrisMoves {
         val height = grid.size
         val width = grid[0].size
         var holes = 0
+        var aggregateHeight = 0
         var linesCleared = 0
         val columnHeights = IntArray(width)
 
+        // Count holes, aggregate height, and bumpiness
         for (col in 0 until width) {
             var foundBlock = false
             for (row in 0 until height) {
                 if (grid[row][col]) {
                     if (!foundBlock) {
                         columnHeights[col] = height - row
+                        aggregateHeight += height - row
                         foundBlock = true
                     }
                 } else if (foundBlock) {
@@ -122,19 +128,19 @@ object TetrisMoves {
             }
         }
 
+        // Count full lines
         for (row in 0 until height) {
             if (grid[row].all { it }) linesCleared++
         }
 
-        val aggregateHeight = columnHeights.sum()
         val bumpiness = (0 until width - 1).sumOf { abs(columnHeights[it] - columnHeights[it + 1]) }
-        val maxHeight = columnHeights.maxOrNull() ?: 0
-        val heightPenalty = if (maxHeight > MAX_ALLOWED_HEIGHT) (maxHeight - MAX_ALLOWED_HEIGHT) * 1000 else 0
 
-        return linesCleared * 2000 -
-                holes * 500 -
-                bumpiness * 10 -
-                aggregateHeight * 1 -
-                heightPenalty
+        // Pierre Dellacherie weights (scaled x1000 for integer scoring)
+        val score = (-510 * aggregateHeight
+                - 356 * holes
+                - 184 * bumpiness
+                + 760 * linesCleared)
+
+        return score
     }
 }

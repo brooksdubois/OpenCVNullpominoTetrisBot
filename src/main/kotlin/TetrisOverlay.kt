@@ -8,10 +8,16 @@ enum class CellState { EMPTY, GHOST, REAL }
 
 object TetrisOverlay {
 
-    // Helper to convert CellState grid to Boolean grid for AI logic
-    fun cellStateGridToBool(grid: Array<Array<CellState>>): Array<BooleanArray> =
-        Array(grid.size) { row -> BooleanArray(grid[0].size) { col -> grid[row][col] == CellState.REAL } }
+    fun cellStateGridToBool(grid: Array<Array<CellState>>): Array<BooleanArray> {
+        val height = grid.size
+        val width = grid[0].size
 
+        return Array(height) { row ->
+            BooleanArray(width) { col ->
+                row >= 4 && grid[row][col] == CellState.REAL
+            }
+        }
+    }
 
     fun extractCellStatesFromFrame(
         mat: Mat, origin: Point, cellSize: Size, width: Int, height: Int

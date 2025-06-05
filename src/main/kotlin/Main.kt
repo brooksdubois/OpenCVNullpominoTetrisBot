@@ -1,33 +1,30 @@
 import TetrisOverlay.cellStateGridToBool
 import TetrisOverlay.extractCellStatesFromFrame
-import org.opencv.core.*
+import org.opencv.core.Rect
 import org.opencv.highgui.HighGui
-import java.awt.Rectangle
-import java.awt.Robot
+import java.awt.*
+import java.awt.event.KeyEvent
+
+fun printGrid(grid: Array<BooleanArray>) {
+    println("📦 Grid:")
+    for (row in grid) {
+        println(row.joinToString("") { if (it) "#" else "." })
+    }
+}
 
 fun main() {
     System.load("${System.getProperty("user.dir")}/libopencv_java4110.dylib")
 
     val robot = Robot()
     val board = TetrisBoard()
-    val mapper = MoveMapper()
+    val mapper = MoveMapper() // handles key generation
     setupKeyListener()
 
     val gameRegion = Rectangle(260, 240, 380, 480)
-    val nextBoxRect = Rect(200, 20, 70, 40)
-    val secondNextBox = Rect(273, 40, 36, 20)
-    val thirdNextBox = Rect(312, 40, 36, 20)
-    val fourthNextBox = Rect(326, 80, 36, 20)
-
-    var lastColor: Scalar? = null
-    var lastPlayTime = System.currentTimeMillis()
-    val minDelayMs = 1000L
-    var isFirstTurn = true
 
     println("⏳ Waiting 3 seconds before activating bot...")
     Thread.sleep(3000)
 
-    // Detect playfield once
     val screenCapture = robot.createScreenCapture(gameRegion)
     val mat = bufferedImageToMat(screenCapture)
     val detected = detectPlayfield(mat)
@@ -40,135 +37,79 @@ fun main() {
     val (boardTopLeft, cellSize) = detected
     TetrisOverlay.drawOverlay(mat, boardTopLeft, cellSize, board.width, board.height)
 
-    // Wait for game to start visually
-    println("⏳ Waiting for game to start...")
-    while (true) {
-        val startCapture = robot.createScreenCapture(gameRegion)
-        val startMat = bufferedImageToMat(startCapture)
-
-        val cellStates = extractCellStatesFromFrame(startMat, boardTopLeft, cellSize, board.width, board.height)
-        TetrisOverlay.drawCellOverlays(startMat, boardTopLeft, cellSize, cellStates)
-
-        val cellGrid = cellStateGridToBool(cellStates)
-        board.updateFromGameFrame(cellGrid)
-
-        val hasLiveBlocks = cellGrid.any { row -> row.any { it } }
-        if (hasLiveBlocks) break
-
-        HighGui.imshow("Waiting for start", startMat)
-        if (HighGui.waitKey(33) >= 0) return
-        Thread.sleep(100)
-    }
-
     println("✅ Game detected. Bot starting.")
+    val detector = SimpleHuePieceDetector(
+        listOf(
+            Rect(200, 20, 70, 40),
+            Rect(273, 40, 36, 20),
+            Rect(312, 40, 36, 20),
+            Rect(326, 80, 36, 20)
+        )
+    )
 
-    var currentPiece: Brick? = null
-    var nextPiece: Brick? = null
-    var secondNextPiece: Brick? = null
-    var thirdNextPiece: Brick? = null
-    var fourthNextPiece: Brick? = null
+    var lastLoggedQueue: List<Brick?> = emptyList()
+    var lastPlannedPiece: Brick? = null
+    var currentMove: Pair<Int, Int>? = null
 
     while (true) {
-        if (resetRequested) {
-            println("🔁 Resetting board...")
-            board.updateFromGameFrame(Array(board.height) { BooleanArray(board.width) })
-            currentPiece = null
-            nextPiece = null
-            secondNextPiece = null
-            thirdNextPiece = null
-            fourthNextPiece = null
-            isFirstTurn = true
-            resetRequested = false
+        val mat = bufferedImageToMat(robot.createScreenCapture(gameRegion))
 
-            println("⏳ Waiting for game to restart...")
-            continue  // skip this frame
-        }
-        val screenCapture = robot.createScreenCapture(gameRegion)
-        val mat = bufferedImageToMat(screenCapture)
-
-        // --- Board state extraction and overlay (always!) ---
         val cellStates = extractCellStatesFromFrame(mat, boardTopLeft, cellSize, board.width, board.height)
         TetrisOverlay.drawCellOverlays(mat, boardTopLeft, cellSize, cellStates)
 
         val cellGrid = cellStateGridToBool(cellStates)
         board.updateFromGameFrame(cellGrid)
+        detector.update(mat)
 
-        // Draw piece detection rectangles (debug)
-        drawRect(mat, nextBoxRect, Scalar(0.0, 255.0, 0.0), 2)
-        drawRect(mat, secondNextBox, Scalar(0.0, 255.0, 0.0), 2)
-        drawRect(mat, thirdNextBox, Scalar(0.0, 255.0, 0.0), 2)
-        drawRect(mat, fourthNextBox, Scalar(0.0, 255.0, 0.0), 2)
+        val queue = detector.getQueue()
+        if (queue != lastLoggedQueue) {
+            println("Next pieces: $queue")
+            lastLoggedQueue = queue
+        }
 
-        // Detect upcoming piece colors
-        val nextPieceColor = detectNextPieceColor(mat, nextBoxRect)
-        val secondNextPieceColor = detectNextPieceColor(mat, secondNextBox)
-        val thirdNextPieceColor = detectNextPieceColor(mat, thirdNextBox)
-        val fourthNextPieceColor = detectNextPieceColor(mat, fourthNextBox)
+        val currentPiece = detector.current
+        if (currentPiece != null && currentPiece != lastPlannedPiece) {
+            val grid = board.getGrid()
+            printGrid(grid)
 
-        // Only proceed if the next piece changes visually
-        if (hasColorChanged(lastColor, nextPieceColor, 25.0)) {
-            val now = System.currentTimeMillis()
-            if (now - lastPlayTime > minDelayMs) {
-                val firstDetected = classifyPieceColor(nextPieceColor)
-                val secondDetected = classifyPieceColor(secondNextPieceColor)
-                val thirdDetected = classifyPieceColor(thirdNextPieceColor)
-                val fourthDetected = classifyPieceColor(fourthNextPieceColor)
+            val move = TetrisMoves.autoSelectWithLookahead(
+                board, listOf(currentPiece), depth = 1
+            ) { gridEval ->
+                TetrisMoves.evaluateBoardStatic(gridEval)
+            }
 
-                if (firstDetected != null && secondDetected != null && thirdDetected != null && fourthDetected != null) {
-                    if (isFirstTurn) {
-                        nextPiece = firstDetected
-                        secondNextPiece = secondDetected
-                        thirdNextPiece = thirdDetected
-                        fourthNextPiece = fourthDetected
-                        println("First piece: $nextPiece (waiting for drop...)")
-                        isFirstTurn = false
-                    } else {
-                        currentPiece = nextPiece
-                        nextPiece = secondNextPiece
-                        secondNextPiece = thirdNextPiece
-                        thirdNextPiece = fourthNextPiece
-                        fourthNextPiece = fourthDetected
+            println("🧠 AI selected move for $currentPiece → $move")
+            currentMove = move
+            lastPlannedPiece = currentPiece
 
-                        if (currentPiece != null) {
-                            println("Current: $currentPiece | Next: $nextPiece | Second: $secondNextPiece | Third: $thirdNextPiece")
-                            val move = TetrisMoves.autoSelectWithLookahead(
-                                board,
-                                listOfNotNull(currentPiece, nextPiece, secondNextPiece),
-                                depth = 2
-                            ) { grid -> TetrisMoves.evaluateBoardStatic(grid) }
-
-                            if (move != null) {
-                                val (rotation, column) = move
-                                TetrisOverlay.drawBotPrediction(
-                                    mat, boardTopLeft, cellSize,
-                                    currentPiece, rotation, column, board.getGrid()
-                                )
-                                // Drop the piece on the board (in the bot simulation)
-                                val dropRow = (board.height downTo 0).firstOrNull { row ->
-                                    board.canPlace(currentPiece, rotation, row to column) &&
-                                            board.hasVerticalAccess(currentPiece, rotation, row to column)
-                                }
-                                if (dropRow != null) {
-                                    board.place(currentPiece, rotation, dropRow to column)
-                                    board.clearFullLines()
-                                } else {
-                                    println("❌ Drop failed — possibly out of sync")
-                                }
-                                // Send moves to game window
-                                val spawnCol = mapper.spawnColumnFor(currentPiece)
-                                val inputs = mapper.generateInputSequence(rotation, column, spawnCol)
-                                mapper.execute(robot, inputs)
-                                lastColor = nextPieceColor
-                                lastPlayTime = now
-                            }
-                        }
-                    }
+            // 🔑 Execute move via keypresses
+            if (move != null) {
+                val (rotation, column) = move
+                val inputs = mapper.generateInputSequence(rotation, column, 4)
+                inputs.forEach {
+                    robot.keyPress(it)
+                    robot.keyRelease(it)
+                    Thread.sleep(25)
                 }
+                robot.keyPress(KeyEvent.VK_UP)
+                robot.keyRelease(KeyEvent.VK_UP)
             }
         }
 
-        HighGui.imshow("Nullpomino", mat)
+        if (currentPiece != null && currentMove != null) {
+            val (rotation, column) = currentMove
+            TetrisOverlay.drawBotPrediction(
+                mat,
+                boardTopLeft,
+                cellSize,
+                currentPiece,
+                rotation,
+                column,
+                board.getGrid()
+            )
+        }
+
+        HighGui.imshow("Tetris", mat)
         if (HighGui.waitKey(33) >= 0) break
-        Thread.sleep(100)
     }
 }
