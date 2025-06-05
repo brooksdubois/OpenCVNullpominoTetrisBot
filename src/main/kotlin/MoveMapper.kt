@@ -6,7 +6,7 @@ class MoveMapper(
     private val rotateFirst: Boolean = true
 ) {
     private val spawnColumns = mapOf(
-        Brick.I to 3,
+        Brick.I to 5,
         Brick.O to 4,
         Brick.T to 3,
         Brick.S to 3,
@@ -17,25 +17,19 @@ class MoveMapper(
 
     fun spawnColumnFor(brick: Brick): Int = spawnColumns[brick] ?: 4
 
-    private fun anchorColumn(brick: Brick, rotation: Int): Int =
-        brick.rotations[rotation % 4].minOf { it.second }
-
     fun generateInputSequence(rotation: Int, column: Int, spawnColumn: Int, brick: Brick): List<Int> = buildList {
-        val startOffset = anchorColumn(brick, 0)
-        val endOffset = anchorColumn(brick, rotation % 4)
-        val adjustedSpawnCol = spawnColumn - startOffset
-        val adjustedTargetCol = column - endOffset
-        val delta = adjustedTargetCol - adjustedSpawnCol
+        val delta = column - spawnColumn
 
-        if (rotateFirst) repeat(rotation) { add(KeyEvent.VK_SHIFT) }
+        if (rotateFirst) repeat(rotation) { add(KeyEvent.VK_C) }
 
         val dirKey = if (delta < 0) KeyEvent.VK_LEFT else KeyEvent.VK_RIGHT
         repeat(kotlin.math.abs(delta)) { add(dirKey) }
 
-        if (!rotateFirst) repeat(rotation) { add(KeyEvent.VK_SHIFT) }
+        if (!rotateFirst) repeat(rotation) { add(KeyEvent.VK_C) }
 
         add(KeyEvent.VK_UP)
     }
+
 
     fun execute(robot: Robot, inputs: List<Int>) {
         println("🕹 Executing input sequence: ${inputs.map { KeyEvent.getKeyText(it) }}")

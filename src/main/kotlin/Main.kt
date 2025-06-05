@@ -66,12 +66,9 @@ fun main() {
             println("Next pieces: $queue")
             lastLoggedQueue = queue
         }
-
         val currentPiece = detector.current
-        if (currentPiece != null && currentPiece != lastPlannedPiece) {
-            val grid = board.getGrid()
-            printGrid(grid)
 
+        if (currentPiece != null && currentPiece != lastPlannedPiece) {
             val move = autoSelectWithLookaheadBasicAI(board, listOf(currentPiece))
             println("🧠 AI selected move for $currentPiece → $move")
             currentMove = move
@@ -83,23 +80,13 @@ fun main() {
                 mapper.execute(robot, inputs)
             }
         }
-
         if (currentPiece != null && currentMove != null) {
             val (rotation, column) = currentMove
             TetrisOverlay.drawBotPrediction(
-                mat,
-                boardTopLeft,
-                cellSize,
-                currentPiece,
-                rotation,
-                column,
-                board.getGrid()
+                mat, boardTopLeft, cellSize, currentPiece, rotation, column, board.getGrid()
             )
         }
-
         HighGui.imshow("Tetris", mat)
         if (HighGui.waitKey(33) >= 0) break
-
-        Thread.sleep(300)
     }
 }

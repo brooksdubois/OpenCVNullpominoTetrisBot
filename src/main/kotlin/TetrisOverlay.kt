@@ -4,8 +4,6 @@ import kotlin.math.roundToInt
 
 enum class CellState { EMPTY, GHOST, REAL }
 
-
-
 object TetrisOverlay {
 
     fun cellStateGridToBool(grid: Array<Array<CellState>>): Array<BooleanArray> {
