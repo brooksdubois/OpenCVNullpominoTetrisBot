@@ -17,7 +17,7 @@ fun main() {
 
     val robot = Robot()
     val board = TetrisBoard()
-    val mapper = MoveMapper() // handles key generation
+    val mapper = MoveMapper(delayMs = 75L, rotateFirst = true)
     setupKeyListener()
 
     val gameRegion = Rectangle(260, 240, 380, 480)
@@ -72,27 +72,15 @@ fun main() {
             val grid = board.getGrid()
             printGrid(grid)
 
-            val move = TetrisMoves.autoSelectWithLookahead(
-                board, listOf(currentPiece), depth = 1
-            ) { gridEval ->
-                TetrisMoves.evaluateBoardStatic(gridEval)
-            }
-
+            val move = autoSelectWithLookaheadBasicAI(board, listOf(currentPiece))
             println("🧠 AI selected move for $currentPiece → $move")
             currentMove = move
             lastPlannedPiece = currentPiece
 
-            // 🔑 Execute move via keypresses
             if (move != null) {
                 val (rotation, column) = move
-                val inputs = mapper.generateInputSequence(rotation, column, 4)
-                inputs.forEach {
-                    robot.keyPress(it)
-                    robot.keyRelease(it)
-                    Thread.sleep(25)
-                }
-                robot.keyPress(KeyEvent.VK_UP)
-                robot.keyRelease(KeyEvent.VK_UP)
+                val inputs = mapper.generateInputSequence(rotation, column, mapper.spawnColumnFor(currentPiece), currentPiece)
+                mapper.execute(robot, inputs)
             }
         }
 
@@ -111,5 +99,7 @@ fun main() {
 
         HighGui.imshow("Tetris", mat)
         if (HighGui.waitKey(33) >= 0) break
+
+        Thread.sleep(300)
     }
 }
