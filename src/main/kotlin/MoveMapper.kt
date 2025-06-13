@@ -5,8 +5,9 @@ class MoveMapper(
     private val delayMs: Long = 35L,
     private val rotateFirst: Boolean = true
 ) {
+    // Approximate spawn positions for a 10x20 board using SRS
     private val spawnColumns = mapOf(
-        Brick.I to 5,
+        Brick.I to 3,
         Brick.O to 4,
         Brick.T to 3,
         Brick.S to 3,

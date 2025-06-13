@@ -69,14 +69,25 @@ fun main() {
         val currentPiece = detector.current
 
         if (currentPiece != null && currentPiece != lastPlannedPiece) {
-            val move = autoSelectWithLookaheadBasicAI(board, listOf(currentPiece))
+            val lookaheadQueue = listOf(currentPiece) + queue.filterNotNull()
+            val move = TetrisMoves.autoSelectWithLookahead(
+                board,
+                lookaheadQueue,
+                depth = 2,
+                evaluate = TetrisMoves::evaluateBoardStatic
+            )
             println("🧠 AI selected move for $currentPiece → $move")
             currentMove = move
             lastPlannedPiece = currentPiece
 
             if (move != null) {
                 val (rotation, column) = move
-                val inputs = mapper.generateInputSequence(rotation, column, mapper.spawnColumnFor(currentPiece), currentPiece)
+                val inputs = mapper.generateInputSequence(
+                    rotation,
+                    column,
+                    mapper.spawnColumnFor(currentPiece),
+                    currentPiece
+                )
                 mapper.execute(robot, inputs)
             }
         }
